@@ -19,12 +19,13 @@ package org.apache.spark.examples.mllib
 
 import org.apache.log4j.{Level, Logger}
 import scopt.OptionParser
-
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.mllib.classification.{LogisticRegressionWithLBFGS, SVMWithSGD}
 import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
 import org.apache.spark.mllib.util.MLUtils
 import org.apache.spark.mllib.optimization.{SquaredL2Updater, L1Updater}
+import org.apache.hadoop.yarn.webapp.view.DefaultPage
+import org.apache.spark.mllib.classification.LogisticRegressionModel
 
 /**
  * An example app for binary classification. Run with
@@ -50,9 +51,9 @@ object BinaryClassification {
   import RegType._
 
   case class Params(
-      input: String = null,
-      numIterations: Int = 100,
-      stepSize: Double = 1.0,
+      input: String = "data/mllib/sample_binary_classification_data.txt",
+      numIterations: Int = 10,
+      stepSize: Double = 0.1,
       algorithm: Algorithm = LR,
       regType: RegType = L2,
       regParam: Double = 0.01) extends AbstractParams[Params]
@@ -93,16 +94,17 @@ object BinaryClassification {
           |  data/mllib/sample_binary_classification_data.txt
         """.stripMargin)
     }
-
-    parser.parse(args, defaultParams).map { params =>
-      run(params)
-    } getOrElse {
-      sys.exit(1)
-    }
+    
+    run(defaultParams)
+//    parser.parse(args, defaultParams).map { params =>
+//      run(params)
+//    } getOrElse {
+//      sys.exit(1)
+//    }
   }
 
   def run(params: Params) {
-    val conf = new SparkConf().setAppName(s"BinaryClassification with $params")
+    val conf = new SparkConf().setAppName(s"BinaryClassification with $params").setMaster("local[2]")
     val sc = new SparkContext(conf)
 
     Logger.getRootLogger.setLevel(Level.WARN)
@@ -131,7 +133,10 @@ object BinaryClassification {
           .setNumIterations(params.numIterations)
           .setUpdater(updater)
           .setRegParam(params.regParam)
-        algorithm.run(training).clearThreshold()
+//        algorithm.run(training).clearThreshold()
+          var m = algorithm.run(training)
+          println (m.getThreshold)
+          m
       case SVM =>
         val algorithm = new SVMWithSGD()
         algorithm.optimizer
@@ -141,10 +146,13 @@ object BinaryClassification {
           .setRegParam(params.regParam)
         algorithm.run(training).clearThreshold()
     }
-
+    
+    
     val prediction = model.predict(test.map(_.features))
-    val predictionAndLabel = prediction.zip(test.map(_.label))
 
+    val predictionAndLabel = prediction.zip(test.map(_.label))
+    
+    predictionAndLabel.foreach(a => println(s"${a._1} ${a._2}"))
     val metrics = new BinaryClassificationMetrics(predictionAndLabel)
 
     println(s"Test areaUnderPR = ${metrics.areaUnderPR()}.")
